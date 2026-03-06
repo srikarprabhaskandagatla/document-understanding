@@ -1,0 +1,34 @@
+# Core ML stack
+# WHY TORCH 2.2: First stable release with FlashAttention-2 out-of-the-box.
+# FlashAttention-2 reduces LLaVA attention memory usage by ~40% on A100.
+torch==2.2.2
+torchvision==0.17.2
+
+# WHY TRANSFORMERS 4.40: First version with stable LlavaNextForConditionalGeneration.
+# Earlier versions have a bug in image tile attention mask construction.
+transformers==4.40.0
+
+# WHY PEFT 0.10: Fixes QLoRA + gradient checkpointing interaction bug from 0.9.
+peft==0.10.0
+
+# Handles device placement and mixed precision for multi-GPU/CPU offloading
+accelerate==0.28.0
+
+# WHY BITSANDBYTES 0.43: Adds CUDA 12.1 native kernels for NF4 quantization.
+# Earlier versions require patched CUDA libraries that Unity doesn't have.
+bitsandbytes==0.43.0
+
+# Experiment tracking — streams to cloud from headless SLURM nodes
+wandb==0.16.6
+
+# Levenshtein distance for ANLS metric (C extension — much faster than pure Python)
+python-Levenshtein==0.25.0
+
+# Config and utilities
+pyyaml==6.0.1
+pillow==10.3.0
+safetensors==0.4.2
+
+# SageMaker SDK (only needed on deploy machine, not Unity)
+sagemaker==2.214.0
+boto3==1.34.0
