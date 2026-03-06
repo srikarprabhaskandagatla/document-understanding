@@ -1,4 +1,4 @@
-This project fine-tunes LLaVA-1.6 (a Vision-Language Model) on a custom 15,000-sample document understanding dataset. The goal is to teach the model to answer questions about document images — think invoices, forms, research papers — with high accuracy.
+This project fine-tunes LLaVA-1.6 (a Vision-Language Model) on a custom 15,000-sample document understanding dataset. The goal is to teach the model to answer questions about document images, think invoices, forms, research papers, with high accuracy.
 
 Here's the pipeline at a high level:
 1. Dataset prep — 15K image-question-answer triples formatted for LLaVA instruction tuning
