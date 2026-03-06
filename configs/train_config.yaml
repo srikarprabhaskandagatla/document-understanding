@@ -1,0 +1,47 @@
+model:
+  name: "llava-hf/llava-v1.6-mistral-7b-hf"   # LLaVA-1.6 with Mistral-7B backbone
+  cache_dir: "/scratch/your_unity_username/model_cache"  # Unity scratch — fast NVMe I/O
+
+lora:
+  r: 64                    # Rank — higher = more capacity, slower; 64 is proven sweet spot for VQA
+  lora_alpha: 128          # Scale factor = alpha/r = 2; standard for stable training
+  target_modules:          # Only attention projections — vision encoder frozen intentionally
+    - "q_proj"
+    - "v_proj"
+    - "k_proj"
+    - "o_proj"
+  lora_dropout: 0.05
+  bias: "none"
+  task_type: "CAUSAL_LM"
+
+data:
+  train_path: "/scratch/your_unity_username/data/processed/train.json"
+  val_path: "/scratch/your_unity_username/data/processed/val.json"
+  image_root: "/scratch/your_unity_username/data/raw/images/"
+  max_length: 2048         # LLaVA-1.6 supports up to 4096 but 2048 covers all DocVQA samples
+  image_size: 336          # LLaVA-1.6 native resolution — do NOT change
+
+training:
+  output_dir: "/scratch/your_unity_username/checkpoints/llava-docvqa"
+  num_epochs: 3
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 8   # Effective batch = 4 * 8 = 32 — matches paper's recommendation
+  learning_rate: 2e-4
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  weight_decay: 0.0
+  fp16: false
+  bf16: true                        # A100 supports bf16 natively; more stable than fp16 for LLMs
+  dataloader_num_workers: 4
+  save_strategy: "epoch"
+  eval_strategy: "epoch"
+  load_best_model_at_end: true
+  metric_for_best_model: "vqa_accuracy"
+  logging_steps: 10
+  report_to: "wandb"
+
+wandb:
+  project: "llava-docvqa"
+  entity: "your_wandb_entity"       # Replace with your W&B username/team
+  run_name: "lora-r64-bs32-3ep"
