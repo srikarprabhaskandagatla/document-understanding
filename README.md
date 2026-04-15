@@ -1,6 +1,47 @@
-# LLaVA-1.6 Document Understanding — Fine-Tuning Pipeline
+<h1 align="center">
+  <br>
+  LLaVA-1.6 Document Understanding
+  <br>
+</h1>
 
-Fine-tuning `llava-hf/llava-v1.6-mistral-7b-hf` on 15,000 document image-question-answer triples from the DocVQA dataset using LoRA + 4-bit quantization, trained on an A100 GPU on the Unity HPC cluster, and deployed as a REST endpoint on AWS SageMaker.
+<h4 align="center">Fine-tuning a Vision-Language Model on 15,000 document images for Visual Question Answering - using LoRA + 4-bit quantization on an A100 GPU, tracked with W&B, and deployed as a REST endpoint on AWS SageMaker.</h4>
+
+<p align="center">
+  <a href="https://www.python.org/">
+    <img src="https://img.shields.io/badge/-Python-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
+  </a>
+  <a href="https://huggingface.co/llava-hf/llava-v1.6-mistral-7b-hf">
+    <img src="https://img.shields.io/badge/-LLaVA--1.6-FFD21E?style=flat-square&logo=huggingface&logoColor=black" alt="LLaVA-1.6">
+  </a>
+  <a href="https://huggingface.co/docs/peft">
+    <img src="https://img.shields.io/badge/-LoRA%20%2F%20QLoRA-FFD21E?style=flat-square&logo=huggingface&logoColor=black" alt="LoRA">
+  </a>
+  <a href="https://pytorch.org/">
+    <img src="https://img.shields.io/badge/-PyTorch-EE4C2C?style=flat-square&logo=pytorch&logoColor=white" alt="PyTorch">
+  </a>
+  <a href="https://huggingface.co/docs/transformers">
+    <img src="https://img.shields.io/badge/-Transformers-FFD21E?style=flat-square&logo=huggingface&logoColor=black" alt="Transformers">
+  </a>
+  <a href="https://wandb.ai/">
+    <img src="https://img.shields.io/badge/-W%26B-FFBE00?style=flat-square&logo=weightsandbiases&logoColor=black" alt="W&B">
+  </a>
+  <a href="https://aws.amazon.com/sagemaker/">
+    <img src="https://img.shields.io/badge/-SageMaker-FF9900?style=flat-square&logo=amazonaws&logoColor=white" alt="SageMaker">
+  </a>
+  <a href="https://www.docker.com/">
+    <img src="https://img.shields.io/badge/-Docker-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
+  </a>
+</p>
+
+<p align="center">
+  <a href="#1-project-goal">Goal</a> •
+  <a href="#2-why-llava-16">Why LLaVA-1.6</a> •
+  <a href="#3-dataset--source-and-structure">Dataset</a> •
+  <a href="#6-lora-configuration--design-choices">LoRA</a> •
+  <a href="#8-evaluation-metrics">Metrics</a> •
+  <a href="#9-deployment--sagemaker">Deployment</a> •
+  <a href="#12-running-the-pipeline">Running</a>
+</p>
 
 ---
 
@@ -8,13 +49,13 @@ Fine-tuning `llava-hf/llava-v1.6-mistral-7b-hf` on 15,000 document image-questio
 
 1. [Project Goal](#1-project-goal)
 2. [Why LLaVA-1.6](#2-why-llava-16)
-3. [Dataset — Source and Structure](#3-dataset--source-and-structure)
-4. [Data Preparation — Design Choices](#4-data-preparation--design-choices)
-5. [Model Loading — Quantization Design](#5-model-loading--quantization-design)
-6. [LoRA Configuration — Design Choices](#6-lora-configuration--design-choices)
+3. [Dataset - Source and Structure](#3-dataset--source-and-structure)
+4. [Data Preparation - Design Choices](#4-data-preparation--design-choices)
+5. [Model Loading - Quantization Design](#5-model-loading--quantization-design)
+6. [LoRA Configuration - Design Choices](#6-lora-configuration--design-choices)
 7. [Training Pipeline](#7-training-pipeline)
 8. [Evaluation Metrics](#8-evaluation-metrics)
-9. [Deployment — SageMaker](#9-deployment--sagemaker)
+9. [Deployment - SageMaker](#9-deployment--sagemaker)
 10. [Project Structure](#10-project-structure)
 11. [Environment Setup](#11-environment-setup)
 12. [Running the Pipeline](#12-running-the-pipeline)
@@ -24,11 +65,11 @@ Fine-tuning `llava-hf/llava-v1.6-mistral-7b-hf` on 15,000 document image-questio
 
 ## 1. Project Goal
 
-Document Visual Question Answering (DocVQA) is the task of answering natural language questions about document images — invoices, forms, research papers, receipts, contracts. Unlike general VQA, DocVQA requires the model to read and reason over dense text embedded in images, not just understand visual content.
+Document Visual Question Answering (DocVQA) is the task of answering natural language questions about document images - invoices, forms, research papers, receipts, contracts. Unlike general VQA, DocVQA requires the model to read and reason over dense text embedded in images, not just understand visual content.
 
 The goal of this project is to:
 - Fine-tune a large Vision-Language Model (VLM) on DocVQA to specialize it for document understanding
-- Do so efficiently — within a single A100 GPU budget — using parameter-efficient fine-tuning
+- Do so efficiently - within a single A100 GPU budget - using parameter-efficient fine-tuning
 - Deploy the resulting model as a production inference endpoint
 
 **Target metrics:** 78% VQA accuracy (ANLS), representing an 18% improvement over the zero-shot baseline.
@@ -41,16 +82,16 @@ The goal of this project is to:
 A classical approach would be OCR (extract text from image) → feed text to a language model. This fails on documents with complex layouts, tables, charts, or handwriting where OCR produces noisy output. A VLM processes the raw image pixels directly, learning visual-linguistic alignment end-to-end.
 
 **Why LLaVA-1.6 specifically (`llava-v1.6-mistral-7b-hf`):**
-- LLaVA-1.6 introduced **dynamic high-resolution tiling** — the image is split into variable-sized tiles (up to 6 tiles per image) and each tile is processed at full resolution. This is critical for documents where small text must be read accurately.
+- LLaVA-1.6 introduced **dynamic high-resolution tiling** - the image is split into variable-sized tiles (up to 6 tiles per image) and each tile is processed at full resolution. This is critical for documents where small text must be read accurately.
 - The Mistral-7B language backbone is stronger than the Vicuna-7B backbone in LLaVA-1.5 for text-heavy reasoning tasks.
-- 7B parameters is the sweet spot — large enough for strong document understanding, small enough to fine-tune on a single A100 with 4-bit quantization.
-- Alternative: InternVL2, Qwen-VL — both strong but less mature HuggingFace integration at the time of this project.
+- 7B parameters is the sweet spot - large enough for strong document understanding, small enough to fine-tune on a single A100 with 4-bit quantization.
+- Alternative: InternVL2, Qwen-VL - both strong but less mature HuggingFace integration at the time of this project.
 
 ---
 
-## 3. Dataset — Source and Structure
+## 3. Dataset - Source and Structure
 
-**Source:** `HuggingFaceM4/DocumentVQA` — the standard DocVQA benchmark dataset, downloaded via HuggingFace `datasets` in streaming mode to avoid loading all ~70K samples into memory.
+**Source:** `HuggingFaceM4/DocumentVQA` - the standard DocVQA benchmark dataset, downloaded via HuggingFace `datasets` in streaming mode to avoid loading all ~70K samples into memory.
 
 **Scale:** 15,000 samples downloaded from the training split.
 
@@ -70,7 +111,7 @@ DocVQA provides multiple acceptable answers per question (annotator agreement). 
 
 ---
 
-## 4. Data Preparation — Design Choices
+## 4. Data Preparation - Design Choices
 
 **LLaVA conversation format:**
 LLaVA models are instruction-tuned and expect input in a structured conversation format, not raw text. Each sample is converted from:
@@ -87,20 +128,20 @@ into:
 }
 ```
 
-The `<image>` token at the start of the human turn is required — it is the placeholder where LLaVA injects the visual features from the vision encoder into the token sequence.
+The `<image>` token at the start of the human turn is required - it is the placeholder where LLaVA injects the visual features from the vision encoder into the token sequence.
 
-**Label masking — why it matters:**
+**Label masking - why it matters:**
 During training, the loss is computed over the entire sequence (question + answer). Without masking, the model is penalized for "wrong" predictions on the question tokens, which are not meaningful supervision signal. The `_mask_non_answer_tokens` method sets all non-answer tokens to `-100` (PyTorch's ignore index in `CrossEntropyLoss`), so the model only learns to predict the answer tokens.
 
 **Image validation:**
 Each image is verified with `PIL.Image.verify()` during preparation. Corrupt images are skipped rather than crashing the pipeline. If a corrupt image is encountered at training time, the dataloader falls back to the next sample.
 
 **Why no data augmentation:**
-Document images should not be augmented with flips or color jitter — a rotated invoice or color-shifted form is not realistic and would hurt OCR-like reading accuracy. The model's dynamic tiling already handles scale variation implicitly.
+Document images should not be augmented with flips or color jitter - a rotated invoice or color-shifted form is not realistic and would hurt OCR-like reading accuracy. The model's dynamic tiling already handles scale variation implicitly.
 
 ---
 
-## 5. Model Loading — Quantization Design
+## 5. Model Loading - Quantization Design
 
 **4-bit NF4 quantization via BitsAndBytes:**
 
@@ -114,19 +155,19 @@ BitsAndBytesConfig(
 ```
 
 - `nf4` (NormalFloat4): A 4-bit data type designed specifically for normally-distributed neural network weights. It outperforms plain int4 quantization by centering the quantization grid on the actual weight distribution.
-- `bnb_4bit_compute_dtype=bfloat16`: Weights are *stored* in 4-bit but *computation* happens in bfloat16. This is the key insight — quantization reduces memory footprint without sacrificing numerical stability in the forward/backward pass.
+- `bnb_4bit_compute_dtype=bfloat16`: Weights are *stored* in 4-bit but *computation* happens in bfloat16. This is the key insight - quantization reduces memory footprint without sacrificing numerical stability in the forward/backward pass.
 - `bnb_4bit_use_double_quant`: Quantizes the quantization constants themselves, saving an additional ~0.4 bits per parameter.
 - **Memory impact:** Full bf16 model ≈ 14GB. With 4-bit quantization ≈ 4-5GB, leaving ample headroom on A100 for activations and optimizer states.
 
 **Why bfloat16 over float16:**
-bfloat16 has the same number of exponent bits as float32 (8), making it numerically safer. float16 has only 5 exponent bits and is prone to overflow/underflow in large models. LayerNorm and other normalization layers remain in float32 regardless — `prepare_model_for_kbit_training` handles this automatically.
+bfloat16 has the same number of exponent bits as float32 (8), making it numerically safer. float16 has only 5 exponent bits and is prone to overflow/underflow in large models. LayerNorm and other normalization layers remain in float32 regardless - `prepare_model_for_kbit_training` handles this automatically.
 
 **`prepare_model_for_kbit_training`:**
-After 4-bit loading, this function: (1) casts normalization layers back to float32 for numerical stability, (2) enables gradient checkpointing to trade compute for memory — activations are recomputed on the backward pass rather than stored.
+After 4-bit loading, this function: (1) casts normalization layers back to float32 for numerical stability, (2) enables gradient checkpointing to trade compute for memory - activations are recomputed on the backward pass rather than stored.
 
 ---
 
-## 6. LoRA Configuration — Design Choices
+## 6. LoRA Configuration - Design Choices
 
 LoRA (Low-Rank Adaptation) freezes the pretrained weights and injects trainable low-rank matrices into selected layers. If a weight matrix `W` has shape `(d × d)`, LoRA adds `ΔW = B·A` where `A` is `(d × r)` and `B` is `(r × d)`. Only `A` and `B` are trained.
 
@@ -135,9 +176,9 @@ LoRA (Low-Rank Adaptation) freezes the pretrained weights and injects trainable 
 | Parameter | Value | Reasoning |
 |---|---|---|
 | `r` | 32 | Rank 32 gives a good capacity/speed tradeoff. Rank 64 adds ~20% more parameters with diminishing returns on DocVQA. |
-| `lora_alpha` | 64 | Scaling factor = `alpha/r = 2.0`. Keeping this ratio at 2x is a standard heuristic — it controls the effective learning rate of the adapter relative to the base model. |
+| `lora_alpha` | 64 | Scaling factor = `alpha/r = 2.0`. Keeping this ratio at 2x is a standard heuristic - it controls the effective learning rate of the adapter relative to the base model. |
 | `lora_dropout` | 0.05 | Light regularization. Higher dropout (0.1+) is only needed with very small datasets. |
-| `bias` | none | Bias terms are not trained — they add parameters without meaningful benefit for adaptation. |
+| `bias` | none | Bias terms are not trained - they add parameters without meaningful benefit for adaptation. |
 
 **Target modules:**
 ```python
@@ -146,7 +187,7 @@ LoRA (Low-Rank Adaptation) freezes the pretrained weights and injects trainable 
 ```
 
 **Why include MLP layers:**
-Early LoRA work targeted only attention projections. For document understanding specifically, MLP layers are responsible for factual recall and text recognition — the `gate_proj/up_proj/down_proj` form the FFN (feed-forward network) that stores and retrieves knowledge. Including them meaningfully improves DocVQA accuracy.
+Early LoRA work targeted only attention projections. For document understanding specifically, MLP layers are responsible for factual recall and text recognition - the `gate_proj/up_proj/down_proj` form the FFN (feed-forward network) that stores and retrieves knowledge. Including them meaningfully improves DocVQA accuracy.
 
 **Trainable parameter count:** ~1-2% of total model parameters, compared to full fine-tuning which would require updating all 7B parameters and far more GPU memory.
 
@@ -154,7 +195,7 @@ Early LoRA work targeted only attention projections. For document understanding 
 
 ## 7. Training Pipeline
 
-**Framework:** HuggingFace `Trainer` — handles the training loop, gradient accumulation, mixed precision, checkpointing, and evaluation callbacks.
+**Framework:** HuggingFace `Trainer` - handles the training loop, gradient accumulation, mixed precision, checkpointing, and evaluation callbacks.
 
 **Key training settings:**
 
@@ -163,7 +204,7 @@ Early LoRA work targeted only attention projections. For document understanding 
 | Effective batch size | 32 (8 per device × 4 accumulation steps) | Large effective batch stabilizes gradients for a 7B model |
 | Learning rate | 1e-4 | Conservative for a large VLM. 2e-4 risks instability in later epochs. |
 | LR schedule | Cosine with warmup | Cosine decay avoids abrupt LR drops. 3% warmup gradually ramps up LR to avoid early instability. |
-| Epochs | 3 | DocVQA is a focused task — 3 epochs is sufficient to converge without overfitting |
+| Epochs | 3 | DocVQA is a focused task - 3 epochs is sufficient to converge without overfitting |
 | `bf16=True` | bfloat16 training | Faster than fp32, more stable than fp16 for large models |
 | `max_length` | 1024 tokens | DocVQA Q&A pairs are short. 1024 covers >99% of samples while halving attention cost vs 2048 |
 
@@ -180,7 +221,7 @@ Weights & Biases (`wandb`) logs loss, gradient norm, learning rate, and VQA accu
 
 ## 8. Evaluation Metrics
 
-**ANLS — Average Normalized Levenshtein Similarity** (primary metric)
+**ANLS - Average Normalized Levenshtein Similarity** (primary metric)
 
 ANLS is the official DocVQA evaluation metric. It measures character-level similarity between the predicted answer and the ground truth, normalized by the length of the longer string:
 
@@ -190,7 +231,7 @@ ANLS = similarity   if similarity >= 0.5
      = 0.0          otherwise
 ```
 
-The 0.5 threshold means predictions that are less than 50% similar to the ground truth score zero — this handles hallucinations and completely wrong answers while rewarding near-correct answers (e.g. "42.50" vs "$42.50").
+The 0.5 threshold means predictions that are less than 50% similar to the ground truth score zero - this handles hallucinations and completely wrong answers while rewarding near-correct answers (e.g. "42.50" vs "$42.50").
 
 **Why ANLS over Exact Match:**
 Exact match is too strict for document answers. OCR-like extraction naturally produces minor variations: `"$1,234.56"` vs `"1234.56"` vs `"1,234.56"` are all correct human readings of the same value, but only one would match exactly.
@@ -208,20 +249,20 @@ answer = re.sub(r"[^\w\s\-]", "", answer)           # strip punctuation
 
 ---
 
-## 9. Deployment — SageMaker
+## 9. Deployment - SageMaker
 
-**Merge step — why it's necessary:**
+**Merge step - why it's necessary:**
 During training, the model is split into frozen base weights + small LoRA adapter matrices. SageMaker inference expects a single self-contained model. `merge_and_unload()` mathematically merges the adapter back into the base weights (`W_final = W_base + B·A·(alpha/r)`), producing a standard model with no PEFT dependency.
 
 **Why merge on CPU in bf16 (not 4-bit):**
-NF4-quantized weights cannot be directly merged — the dequantization and matrix addition must happen in a floating-point space. The merge script loads the base model in bf16 on CPU (~28GB RAM), performs the merge, and saves in safetensors format. This is a one-time offline step.
+NF4-quantized weights cannot be directly merged - the dequantization and matrix addition must happen in a floating-point space. The merge script loads the base model in bf16 on CPU (~28GB RAM), performs the merge, and saves in safetensors format. This is a one-time offline step.
 
 **SageMaker inference handler:**
 The `inference.py` follows SageMaker's four-function contract:
-- `model_fn` — loads model + processor from the model directory
-- `input_fn` — decodes the JSON request, base64-decodes the image
-- `predict_fn` — runs the forward pass, decodes the generated answer tokens
-- `output_fn` — serializes the response as JSON
+- `model_fn` - loads model + processor from the model directory
+- `input_fn` - decodes the JSON request, base64-decodes the image
+- `predict_fn` - runs the forward pass, decodes the generated answer tokens
+- `output_fn` - serializes the response as JSON
 
 **Request format:**
 ```json
@@ -302,13 +343,13 @@ python -c "import wandb; api = wandb.Api(); print(api.viewer.entity)"
 
 ## 12. Running the Pipeline
 
-**Step 1 — Download and prepare dataset (CPU node, ~2-3 hours)**
+**Step 1 - Download and prepare dataset (CPU node, ~2-3 hours)**
 ```bash
 sbatch scripts/1_download.sh
 ```
 Downloads 15K DocVQA samples, saves images to `/data/raw/images/`, converts to LLaVA conversation format, and splits into train/val/test.
 
-**Step 2 — Fine-tune (A100 GPU, ~4-5 hours)**
+**Step 2 - Fine-tune (A100 GPU, ~4-5 hours)**
 ```bash
 sbatch scripts/2_train.sh
 ```
@@ -316,13 +357,13 @@ Trains for 3 epochs. Checkpoints saved to `CHECKPOINT_DIR` after each epoch. Fin
 
 Monitor live training at your W&B project dashboard.
 
-**Step 3 — Merge adapter (CPU node, ~10 min)**
+**Step 3 - Merge adapter (CPU node, ~10 min)**
 ```bash
 sbatch scripts/3_merge.sh
 ```
 Merges LoRA adapter into base model weights. Output is a standalone safetensors model ready for deployment.
 
-**Step 4 — Deploy to SageMaker**
+**Step 4 - Deploy to SageMaker**
 ```bash
 sbatch scripts/4_deploy.sh
 ```
