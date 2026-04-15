@@ -1,0 +1,14 @@
+.claude/
+
+.env
+
+scripts/submit_train.sh
+scripts/1_download.sh
+scripts/2_train.sh
+scripts/3_merge.sh
+scripts/4_deploy.sh
+scripts/logs
+
+dataset/__pycache__/
+
+src/__pycache__/
