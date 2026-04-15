@@ -1,31 +1,3 @@
-"""
-sagemaker_deploy.py
--------------------
-Packages the merged model and deploys it as a SageMaker real-time endpoint.
-
-USAGE:
-  # After training completes on Unity, rsync the merged model to S3, then:
-  python deploy/sagemaker_deploy.py \
-      --model_s3_uri s3://your-bucket/llava-docvqa/merged_model/ \
-      --endpoint_name llava-docvqa-v1
-
-DEPLOYMENT PIPELINE:
-  1. Package model artifacts into model.tar.gz and upload to S3
-  2. Create SageMaker Model (points to S3 + inference.py)
-  3. Create Endpoint Config (instance type, auto-scaling policy)
-  4. Deploy Endpoint (takes ~10 min for LLM endpoints)
-
-WHY ml.g5.2xlarge FOR INFERENCE:
-  - 1x A10G GPU (24GB VRAM) — sufficient for bf16 LLaVA-1.6 inference (14GB VRAM)
-  - $1.52/hr on-demand — cheapest SageMaker GPU instance that fits the model
-  - ml.p3.2xlarge (V100 16GB) is cheaper but can't fit LLaVA-1.6 in bf16
-  - ml.g5.12xlarge (4x A10G) is overkill for single-request inference
-
-WHY NOT SageMaker Serverless Inference:
-  Serverless has a 6GB memory limit and cold start latency of 5-15 seconds.
-  LLaVA requires 14GB VRAM and ~2s warm inference. Serverless is incompatible.
-"""
-
 import argparse
 import json
 import os
@@ -45,12 +17,6 @@ def package_and_upload_model(
     s3_prefix: str,
     region: str,
 ) -> str:
-    """
-    Package the merged model directory into model.tar.gz and upload to S3.
-    
-    SageMaker requires model artifacts in a .tar.gz archive.
-    The archive must contain all model files at the ROOT level (not in subdirs).
-    """
     print(f"Packaging model from {local_model_path}...")
 
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -63,7 +29,7 @@ def package_and_upload_model(
                     arcname = file_path.relative_to(model_dir)
                     tar.add(file_path, arcname=arcname)
 
-            # Add inference script — SageMaker looks for code/inference.py
+            # Add inference script - SageMaker looks for code/inference.py
             inference_script = Path(__file__).parent / "inference.py"
             tar.add(inference_script, arcname="code/inference.py")
 
@@ -86,15 +52,6 @@ def deploy_endpoint(
     instance_type: str = "ml.g5.2xlarge",
     instance_count: int = 1,
 ):
-    """
-    Deploy LLaVA model as a SageMaker real-time endpoint.
-    
-    WHY HuggingFaceModel OVER generic PyTorchModel:
-      SageMaker's HuggingFace DLC (Deep Learning Container) comes pre-installed with:
-        - transformers, torch, peft, accelerate, bitsandbytes
-      Using PyTorchModel would require a custom Docker image with all these deps.
-      The HuggingFace DLC reduces build/deploy time from 30 min to 10 min.
-    """
     sess = sagemaker.Session(boto3.Session(region_name=region))
     role = sagemaker.get_execution_role()
 
@@ -136,7 +93,6 @@ def deploy_endpoint(
 
 
 def test_endpoint(endpoint_name: str, region: str, test_image_path: str, question: str):
-    """Quick smoke test after deployment."""
     import base64
 
     runtime = boto3.client("sagemaker-runtime", region_name=region)

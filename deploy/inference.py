@@ -1,33 +1,3 @@
-"""
-inference.py
-------------
-SageMaker inference handler for the fine-tuned LLaVA-1.6 model.
-
-SageMaker's PyTorchModel container calls these four functions in order:
-  1. model_fn()   — Load model from /opt/ml/model (once, at container startup)
-  2. input_fn()   — Deserialize incoming HTTP request body
-  3. predict_fn() — Run inference
-  4. output_fn()  — Serialize predictions back to HTTP response
-
-WHY THIS STRUCTURE OVER A FLASK/FASTAPI SERVER:
-  SageMaker manages the HTTP server, TLS, auto-scaling, and health checks.
-  These four functions are the ONLY integration points needed.
-  Building a custom server would duplicate infrastructure SageMaker provides
-  and remove access to SageMaker's built-in multi-model serving and canary deployments.
-
-ENDPOINT INPUT FORMAT (JSON):
-  {
-    "image": "<base64-encoded-image>",
-    "question": "What is the total amount on this invoice?"
-  }
-
-ENDPOINT OUTPUT FORMAT (JSON):
-  {
-    "answer": "USD 4,250.00",
-    "confidence": null   # LLaVA doesn't expose token probabilities by default
-  }
-"""
-
 import base64
 import io
 import json
@@ -40,18 +10,6 @@ from transformers import LlavaNextForConditionalGeneration, LlavaNextProcessor
 
 
 def model_fn(model_dir: str):
-    """
-    Load the merged (LoRA-integrated) model from SageMaker model directory.
-    
-    SageMaker extracts model.tar.gz to /opt/ml/model before calling this.
-    model_dir = "/opt/ml/model"
-    
-    WHY MERGED MODEL (not base + adapter):
-      SageMaker containers don't have PEFT installed by default.
-      Merging LoRA weights into the base model before deployment
-      produces a standard HuggingFace model requiring only `transformers`.
-      Simpler dependency tree = faster container startup = lower cold start latency.
-    """
     print(f"Loading model from {model_dir}")
 
     processor = LlavaNextProcessor.from_pretrained(model_dir)
@@ -72,15 +30,6 @@ def model_fn(model_dir: str):
 
 
 def input_fn(request_body: str, content_type: str = "application/json") -> dict:
-    """
-    Deserialize incoming request.
-    
-    WHY BASE64 FOR IMAGES:
-      HTTP/JSON doesn't support binary payloads natively.
-      Base64 encoding increases payload size by ~33% but is universally
-      supported by all API clients without multipart form setup.
-      For document images (<2MB), this overhead is negligible.
-    """
     if content_type != "application/json":
         raise ValueError(f"Unsupported content type: {content_type}. Use application/json.")
 
@@ -100,19 +49,6 @@ def input_fn(request_body: str, content_type: str = "application/json") -> dict:
 
 
 def predict_fn(input_data: dict, model_dict: dict) -> dict:
-    """
-    Run VQA inference.
-    
-    WHY max_new_tokens=128:
-      DocVQA answers are typically 1-10 words. Capping at 128 prevents
-      runaway generation (which adds latency) while covering edge cases
-      like dates, addresses, and multi-word entity names.
-    
-    WHY do_sample=False (greedy decoding):
-      Document VQA is deterministic — "What is the invoice number?" has
-      one correct answer. Sampling introduces randomness that lowers accuracy.
-      Greedy decoding is also faster (no beam search overhead).
-    """
     model = model_dict["model"]
     processor = model_dict["processor"]
     device = next(model.parameters()).device
@@ -156,7 +92,6 @@ def predict_fn(input_data: dict, model_dict: dict) -> dict:
 
 
 def output_fn(prediction: dict, accept: str = "application/json") -> str:
-    """Serialize prediction to JSON response."""
     if accept != "application/json":
         raise ValueError(f"Unsupported accept type: {accept}")
     return json.dumps(prediction)
