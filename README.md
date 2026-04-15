@@ -33,7 +33,7 @@
   </a>
 </p>
 
-<p align="center">
+<!-- <p align="center">
   <a href="#1-project-goal">Goal</a> •
   <a href="#2-why-llava-16">Why LLaVA-1.6</a> •
   <a href="#3-dataset--source-and-structure">Dataset</a> •
@@ -41,7 +41,7 @@
   <a href="#8-evaluation-metrics">Metrics</a> •
   <a href="#9-deployment--sagemaker">Deployment</a> •
   <a href="#12-running-the-pipeline">Running</a>
-</p>
+</p> -->
 
 ---
 
