@@ -130,14 +130,24 @@ def collate_fn(batch: list[dict], pad_token_id: int) -> dict:
                 [torch.full((pad_len,), DocVQADataset.IGNORE_INDEX), item["labels"]]
             )
         )
-        # pixel_values: variable num_tiles per image — keep as list, LlavaNext handles it
         pixel_values.append(item["pixel_values"].squeeze(0))  # (num_tiles, C, H, W)
         image_sizes.append(item["image_sizes"].squeeze(0))    # (2,)
+
+    # Pad all images to the same number of tiles so we can stack into a tensor
+    max_tiles = max(pv.shape[0] for pv in pixel_values)
+    C, H, W = pixel_values[0].shape[1], pixel_values[0].shape[2], pixel_values[0].shape[3]
+    padded_pixel_values = []
+    for pv in pixel_values:
+        num_tiles = pv.shape[0]
+        if num_tiles < max_tiles:
+            pad = torch.zeros(max_tiles - num_tiles, C, H, W, dtype=pv.dtype)
+            pv = torch.cat([pv, pad], dim=0)
+        padded_pixel_values.append(pv)
 
     return {
         "input_ids": torch.stack(padded_input_ids),
         "attention_mask": torch.stack(padded_attention_masks),
         "labels": torch.stack(padded_labels),
-        "pixel_values": pixel_values,                          # list of (num_tiles, C, H, W)
-        "image_sizes": torch.stack(image_sizes),               # (B, 2)
+        "pixel_values": torch.stack(padded_pixel_values),  # (B, max_tiles, C, H, W)
+        "image_sizes": torch.stack(image_sizes),            # (B, 2)
     }
